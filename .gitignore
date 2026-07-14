@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+# El CSV de train pesa ~230MB (excede el limite de GitHub) -- se descarga
+# aparte, ver README. El de test (74KB) sí se versiona.
+data/raw/training.1600000.processed.noemoticon.csv
+data/raw/*.zip
