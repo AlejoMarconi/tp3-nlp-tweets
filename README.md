@@ -6,11 +6,19 @@ Análisis de sentimiento sobre el dataset [Sentiment140](http://help.sentiment14
 
 ```
 tp3-nlp-tweets/
-├── data/raw/           # dataset (ver "Cómo obtener los datos" abajo)
+├── data/
+│   ├── raw/            # datasets originales (ver "Cómo obtener los datos")
+│   └── processed/      # texto limpio (lo genera la notebook 02, no se versiona)
+├── models/             # vectorizadores y modelos entrenados (.joblib)
 ├── notebooks/
-│   └── nlp_sentiment_analysis.ipynb   # notebook único con todo el análisis
+│   ├── 01_lectura_y_eda.ipynb     # carga + EDA
+│   ├── 02_preprocesamiento.ipynb  # limpieza -> guarda los parquet
+│   ├── 03_modelos.ipynb           # TextBlob + los 2 modelos -> guarda los .joblib
+│   └── 04_validacion.ipynb        # pesos aprendidos + similitud coseno + conclusiones
 └── requirements.txt
 ```
+
+Las notebooks **se ejecutan en orden**: la 02 genera los datos limpios que consumen la 03 y la 04, y la 03 entrena los modelos que audita la 04. Cada una arranca cargando lo que necesita desde disco, así que **no hay que re-entrenar nada** para volver a mirar la validación.
 
 ## Cómo obtener los datos
 
@@ -30,8 +38,12 @@ uv venv --python 3.11
 uv pip install -r requirements.txt
 .venv/bin/python3 -m spacy download en_core_web_sm
 .venv/bin/python3 -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab'); nltk.download('stopwords')"
-.venv/bin/jupyter notebook notebooks/nlp_sentiment_analysis.ipynb
+.venv/bin/jupyter notebook notebooks/
 ```
+
+Ejecutar las notebooks **en orden: 01 → 02 → 03 → 04**.
+
+> La 02 tarda ~20s (limpia 1.6M de tweets) y la 03 ~1 min (entrena sobre los 1.6M). Las otras dos son rápidas.
 
 ## Resultados principales
 
@@ -53,4 +65,7 @@ Todos los modelos se evalúan en **ambos conjuntos** (train y test) para poder d
 - **El EDA anticipa el techo y detecta un problema de datos:** el largo del tweet no discrimina sentimiento (70 vs 69 caracteres de mediana), y buena parte del vocabulario se comparte entre clases. La similitud coseno lo confirma: la intra-clase (~0.018) supera a la inter-clase (0.015) apenas un 20%. Los wordclouds además revelaron que `quot` (resto de la entidad HTML `&quot;`) contaminaba el vocabulario, lo que llevó a corregir el orden de la limpieza: `html.unescape()` **antes** de filtrar caracteres no alfabéticos, con verificación explícita en la notebook.
 - **La clase neutral es una limitación estructural del dataset:** no existe en el train (un tweet neutral no lleva emoticón), así que ningún modelo puede predecirla. Contra el test completo, su recall es 0 y la accuracy cae a 0.59.
 
-Ver la notebook para el detalle completo (EDA con conclusiones, wordclouds, análisis de sensibilidad de TextBlob, similitud coseno).
+- **Las marcas propias de Twitter sí tienen señal, y la limpieza las borra:** tener una URL sube la tasa de positivos a 66.7% (vs 49.2% sin ella), y mencionar a alguien a 59.3% (vs 42.1%) — brechas de 17 puntos. Se descartan igual porque el objetivo es comparar *técnicas de vectorización* y no mezclar efectos, pero queda documentado como la vía de mejora más concreta.
+- **La hora del día también:** 59.4% de positivos a la 1 AM contra 43.3% a las 16 PM. La explicación conecta con los wordclouds — `work` era la palabra negativa más frecuente, y la gente se queja del trabajo en horario de trabajo.
+
+Ver las notebooks para el detalle completo (cada gráfico cierra con su conclusión).

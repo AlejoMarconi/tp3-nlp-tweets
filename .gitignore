@@ -6,3 +6,6 @@ __pycache__/
 # aparte, ver README. El de test (74KB) sí se versiona.
 data/raw/training.1600000.processed.noemoticon.csv
 data/raw/*.zip
+
+# Datos procesados: el train limpio pesa ~69MB. Se regenera corriendo 02_preprocesamiento.ipynb
+data/processed/*.parquet
