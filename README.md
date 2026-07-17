@@ -45,27 +45,49 @@ Ejecutar las notebooks **en orden: 01 → 02 → 03 → 04**.
 
 > La 02 tarda ~20s (limpia 1.6M de tweets) y la 03 ~1 min (entrena sobre los 1.6M). Las otras dos son rápidas.
 
-## Resultados principales
+## Metodología: los tres conjuntos
 
-Todos los modelos se evalúan en **ambos conjuntos** (train y test) para poder detectar sobreajuste. Los vectorizadores (`CountVectorizer`, `TfidfVectorizer`) se ajustan con `fit` **solo sobre el train**; al test se le aplica únicamente `transform`. El entrenamiento usa los **1.6M de registros completos**, como pide la consigna.
+El dataset viene en dos archivos: `training.1600000.csv` (1.6M, etiquetado **automáticamente por emoticón**) y `testdata.manual.csv` (498, etiquetado **a mano**).
 
-| Modelo | F1 macro (train) | F1 macro (test) | Accuracy (test) | Gap |
-|---|---|---|---|---|
-| TextBlob (pre-entrenado) | — | 0.43 | 0.59 | — |
-| BoW + Naive Bayes | 0.7907 | 0.8189 | 0.82 | −0.028 |
-| TF-IDF + Regresión Logística | 0.8060 | **0.8245** | 0.82 | −0.018 |
+**Usarlos directamente como train y test sería un error.** Se llaman así, pero son dos conjuntos etiquetados de formas distintas: un gap train-test sólo significa algo si ambos vienen de la **misma distribución**. Comparar el F1 sobre etiquetas de emoticón contra el F1 sobre etiquetas humanas no mide sobreajuste — mide otra cosa.
 
-*(Benchmark del azar: 0.50 — el train está balanceado 50/50: 800.000 positivos y 800.000 negativos.)*
+| conjunto | de dónde sale | qué pregunta responde |
+|---|---|---|
+| **train** (1.276.996) | split 80% de los 1.6M | — |
+| **test** (319.250) | split 20% de los 1.6M | **¿sobreajusta?** (misma distribución → la resta con train es válida) |
+| **manual** (359) | archivo etiquetado a mano | **¿coincide con un humano?** (validación externa, se reporta aparte) |
+
+Los vectorizadores (`CountVectorizer`, `TfidfVectorizer`) se ajustan con `fit` **solo sobre el train**; al resto se le aplica únicamente `transform`. El entrenamiento usa **todos los registros** del archivo de train, como pide la consigna.
+
+## Resultados
+
+**Sobreajuste** — train vs test del split (misma distribución):
+
+| Modelo | F1 train | F1 test | Gap |
+|---|---|---|---|
+| BoW + Naive Bayes | 0.7910 | 0.7825 | **+0.009** |
+| TF-IDF + Regresión Logística | 0.8068 | **0.8000** | **+0.007** |
+
+**Validación externa** — set etiquetado a mano (359 tweets):
+
+| Modelo | F1 macro |
+|---|---|
+| TextBlob (pre-entrenado) | 0.43 |
+| BoW + Naive Bayes | **0.8273** |
+| TF-IDF + Regresión Logística | 0.8215 |
+
+*(Benchmark del azar: 0.50 — las clases están balanceadas 50/50.)*
 
 ## Conclusiones principales
 
-- **Entrenar sobre el dominio le gana a un pre-entrenado genérico:** 0.82 vs 0.59 de accuracy. TextBlob usa un léxico de texto formal y no reconoce el lenguaje de Twitter (su recall sobre negativos cae a 0.42).
-- **Ningún modelo sobreajusta: los gaps son negativos**, el test rinde *mejor* que el train. Parece contraintuitivo pero es lo esperable: el train está etiquetado **automáticamente por emoticón** (ruidoso — sarcasmo, sentimientos mezclados) y el test **a mano por humanos** (limpio). El ~79-81% de train no es el techo del modelo sino el techo que impone el ruido de las etiquetas (*weak supervision*).
-- **Los dos modelos entrenados empatan en la práctica (~0.82):** la diferencia de 0.006 sobre un test de 359 tweets son ~2 casos, no alcanza para declarar un ganador. El cuello de botella es la representación, no el algoritmo: ambos son lineales sobre bag-of-words y ninguno captura orden de palabras, negación ni contexto. Para superar ese techo habría que cambiar la representación (n-gramas, BERT) o mejorar las etiquetas.
-- **El EDA anticipa el techo y detecta un problema de datos:** el largo del tweet no discrimina sentimiento (70 vs 69 caracteres de mediana), y buena parte del vocabulario se comparte entre clases. La similitud coseno lo confirma: la intra-clase (~0.018) supera a la inter-clase (0.015) apenas un 20%. Los wordclouds además revelaron que `quot` (resto de la entidad HTML `&quot;`) contaminaba el vocabulario, lo que llevó a corregir el orden de la limpieza: `html.unescape()` **antes** de filtrar caracteres no alfabéticos, con verificación explícita en la notebook.
-- **La clase neutral es una limitación estructural del dataset:** no existe en el train (un tweet neutral no lleva emoticón), así que ningún modelo puede predecirla. Contra el test completo, su recall es 0 y la accuracy cae a 0.59.
-
-- **Las marcas propias de Twitter sí tienen señal, y la limpieza las borra:** tener una URL sube la tasa de positivos a 66.7% (vs 49.2% sin ella), y mencionar a alguien a 59.3% (vs 42.1%) — brechas de 17 puntos. Se descartan igual porque el objetivo es comparar *técnicas de vectorización* y no mezclar efectos, pero queda documentado como la vía de mejora más concreta.
-- **La hora del día también:** 59.4% de positivos a la 1 AM contra 43.3% a las 16 PM. La explicación conecta con los wordclouds — `work` era la palabra negativa más frecuente, y la gente se queja del trabajo en horario de trabajo.
+- **Ningún modelo sobreajusta:** los gaps son +0.009 y +0.007, prácticamente cero. Los modelos son demasiado simples para memorizar 1.3M de ejemplos.
+- **Los dos rinden MEJOR con etiquetas humanas que con las suyas propias** (0.83 vs 0.78 | 0.82 vs 0.80). El train está etiquetado por emoticón (sarcasmo, ironía, emoticones de costumbre) y el set manual a mano. → **El techo del 78-80% no es del modelo: es el ruido del etiquetado** (*weak supervision*).
+- **Gana la Regresión Logística**, pero sólo se puede afirmar mirando el test interno (0.8000 vs 0.7825, sobre **319.250 tweets**). En el set manual el orden se invierte por 0.006, que sobre 359 tweets es ruido. **El tamaño del conjunto define de qué diferencias se puede hablar.**
+- **Entrenar sobre el dominio le gana por lejos al pre-entrenado:** 0.82 vs 0.43 sobre el mismo set. TextBlob no puntúa mal lo negativo — **no lo ve**: su léxico es simétrico (`good`=+0.70, `bad`=−0.70), pero nadie tuitea "bad"; la gente se queja con `aching`, `ponzi`, que valen 0.00 por no estar en la lista.
+- **El cuello de botella es la representación, no el algoritmo:** `'not bad'` = `not`(−5.39) + `bad`(−3.99) = negativo, cuando es un elogio. Una suma no tiene orden. Se rompe con n-gramas o BERT, no con otro clasificador.
+- **El EDA anticipa el techo y detecta un problema de datos:** el largo del tweet no discrimina (70 vs 69 caracteres de mediana), y buena parte del vocabulario se comparte entre clases. La similitud coseno lo confirma: intra-clase (~0.018) vs inter-clase (0.015), apenas un 20% más. Los wordclouds además revelaron que `quot` (resto de `&quot;`) contaminaba el vocabulario → se corrigió el orden de la limpieza (`html.unescape()` **antes** de filtrar), con verificación explícita.
+- **Las marcas propias de Twitter sí tienen señal, y la limpieza las borra:** una URL sube la tasa de positivos a 66.7% (vs 49.2%), y mencionar a alguien a 59.3% (vs 42.1%) — brechas de 17 puntos. Se descartan porque el objetivo es comparar *técnicas de vectorización* sin mezclar efectos, pero queda documentado como la vía de mejora más concreta.
+- **La hora del día también:** 59.4% de positivos a la 1 AM contra 43.3% a las 16 PM. Conecta con los wordclouds — `work` era la palabra negativa más frecuente, y la gente se queja del trabajo en horario de trabajo.
+- **La clase neutral es una limitación estructural:** no existe en el train (un tweet neutral no lleva emoticón), así que ningún modelo puede predecirla. Contra el set manual completo, su recall es 0 y la accuracy cae de 0.83 a 0.59.
 
 Ver las notebooks para el detalle completo (cada gráfico cierra con su conclusión).
